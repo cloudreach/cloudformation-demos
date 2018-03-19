@@ -1,0 +1,243 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudFormation Template for building a simple docker pipeline
+Parameters:
+  AccountId:
+    Type: String
+  ApplicationName:
+    AllowedPattern: ^[a-z]([a-z0-9-])+$
+    ConstraintDescription: Application name must be between 2 and 15 characters, begin
+      with a letter, and only contain lowercase letters, numbers, and hyphens (-).
+    Description: Name of the application.
+    MaxLength: 15
+    MinLength: 2
+    Type: String
+  Region:
+    Type: String
+Resources:
+  BuildProject:
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+        - Name: AWS_DEFAULT_REGION
+          Value:
+            Ref: Region
+        - Name: AWS_ACCOUNT_ID
+          Value:
+            Ref: AccountId
+        - Name: IMAGE_REPO_NAME
+          Value:
+            Ref: EcsRepository
+        - Name: IMAGE_TAG
+          Value: latest
+        Image: aws/codebuild/docker:17.09.0
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      Name:
+        Fn::Join:
+        - '-'
+        - - Ref: ApplicationName
+          - build
+      ServiceRole:
+        Fn::GetAtt:
+        - BuildServiceRole
+        - Arn
+      Source:
+        Type: CODEPIPELINE
+    Type: AWS::CodeBuild::Project
+  BuildServiceRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - codebuild.amazonaws.com
+        Version: 2012-10-17
+      RoleName: CodeBuildRole
+    Type: AWS::IAM::Role
+  CodeCommitRepo:
+    Description: Creating AWS CodeCommit repository for application source code
+    Properties:
+      RepositoryDescription:
+        Fn::Join:
+        - ''
+        - - Ref: ApplicationName
+          - ' project repository'
+      RepositoryName:
+        Ref: ApplicationName
+    Type: AWS::CodeCommit::Repository
+  EcsRepository:
+    Properties:
+      RepositoryName:
+        Ref: ApplicationName
+    Type: AWS::ECR::Repository
+  PipelineRole:
+    Description: Role used for pipeline
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service: codepipeline.amazonaws.com
+      Path: /
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:GetObjectVersion
+            Effect: Allow
+            Resource:
+            - Fn::Join:
+              - ''
+              - - 'arn:aws:s3:::'
+                - Ref: S3Bucket
+            - Fn::Join:
+              - ''
+              - - 'arn:aws:s3:::'
+                - Ref: S3Bucket
+                - /*
+          - Action:
+            - codecommit:GetBranch
+            Effect: Allow
+            Resource:
+            - Fn::GetAtt:
+              - CodeCommitRepo
+              - Arn
+        PolicyName:
+          Fn::Join:
+          - '-'
+          - - Ref: ApplicationName
+            - pipeline
+      RoleName:
+        Fn::Join:
+        - '-'
+        - - Ref: ApplicationName
+          - pipeline
+    Type: AWS::IAM::Role
+  ProjectPipeline:
+    DependsOn:
+    - PipelineRole
+    Description: Creating a deployment pipeline for your project in AWS CodePipeline
+    Properties:
+      ArtifactStore:
+        Location:
+          Ref: S3Bucket
+        Type: S3
+      Name:
+        Fn::Join:
+        - '-'
+        - - Ref: ApplicationName
+          - pipeline
+      RoleArn:
+        Fn::GetAtt:
+        - PipelineRole
+        - Arn
+      Stages:
+      - Actions:
+        - ActionTypeId:
+            Category: Source
+            Owner: AWS
+            Provider: CodeCommit
+            Version: 1
+          Configuration:
+            BranchName: master
+            PollForSourceChanges: false
+            RepositoryName:
+              Ref: ApplicationName
+          InputArtifacts: []
+          Name: SourceFetch
+          OutputArtifacts:
+          - Name:
+              Fn::Join:
+              - '-'
+              - - Ref: ApplicationName
+                - source
+          RunOrder: 1
+        Name: Source
+      - Actions:
+        - ActionTypeId:
+            Category: Build
+            Owner: AWS
+            Provider: CodeBuild
+            Version: 1
+          Configuration:
+            ProjectName:
+              Ref: ApplicationName
+          InputArtifacts:
+          - Name:
+              Fn::Join:
+              - '-'
+              - - Ref: ApplicationName
+                - source
+          Name: BuildDocker
+          OutputArtifacts:
+          - Name:
+              Fn::Join:
+              - '-'
+              - - Ref: ApplicationName
+                - cfntemplate
+          RunOrder: 1
+        Name: Build
+      - Actions:
+        - ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Provider: CloudFormation
+            Version: 1
+          Configuration:
+            ActionMode: CHANGE_SET_REPLACE
+            Capabilities: CAPABILITY_IAM
+            ChangeSetName: pipeline-changeset
+            ParameterOverrides:
+              Fn::Join:
+              - ''
+              - - '{"ApplicationName":"'
+                - Ref: ApplicationName
+                - '"}'
+            RoleArn:
+              Fn::GetAtt:
+              - PipelineRole
+              - Arn
+            StackName:
+              Fn::Join:
+              - '-'
+              - - deploy
+                - Ref: ApplicationName
+            TemplatePath:
+              Fn::Join:
+              - ''
+              - - Ref: ApplicationName
+                - -cfntemplate
+                - ::template-export.yml
+          InputArtifacts:
+          - Name:
+              Fn::Join:
+              - '-'
+              - - Ref: ApplicationName
+                - cfntemplate
+          Name: DeployTemplate
+          RunOrder: 1
+        Name: Deploy
+    Type: AWS::CodePipeline::Pipeline
+  S3Bucket:
+    DeletionPolicy: Retain
+    Description: S3 bucket for CodePipeline artifacts
+    Properties:
+      BucketName:
+        Fn::Join:
+        - '-'
+        - - Ref: ApplicationName
+          - Ref: AWS::Region
+          - pipeline
+          - artifacts
+      VersioningConfiguration:
+        Status: Enabled
+    Type: AWS::S3::Bucket
