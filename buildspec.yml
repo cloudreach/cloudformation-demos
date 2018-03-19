@@ -1,0 +1,27 @@
+version: 0.2
+#env:
+#  variables:
+#    key: "value"
+#    key: "value"
+#  parameter-store:
+#    key: "value"
+#    key: "value"
+phases:
+#  install:
+#    commands:
+#      - command
+#      - command
+#  pre_build:
+#    commands:
+#      - command
+#      - command
+  build:
+    commands:
+      - docker build -t docker-ecs .
+      - docker push
+  post_build:
+    commands:
+      - aws cloudformation package --template-file deploy.yaml --output-template-file deploy.package.yaml
+artifacts:
+  files:
+    - deploy.package.yaml

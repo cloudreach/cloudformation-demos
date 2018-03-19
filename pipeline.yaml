@@ -35,7 +35,26 @@ Resources:
                 - codebuild.amazonaws.com
             Action:
               - sts:AssumeRole
-      RoleName: CodeBuildRole
+
+      Policies:
+        - PolicyName: !Join ['-', [!Ref 'ApplicationName', codebuild]]
+          PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Effect: Allow
+                Resource:
+                  - !Join ['', ['arn:aws:s3:::', !Ref 'S3Bucket']]
+                  - !Join ['', ['arn:aws:s3:::', !Ref 'S3Bucket',/*]]
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: '*'
+      RoleName: !Join ['-', [!Ref 'ApplicationName', codebuild]]
   BuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
@@ -91,10 +110,21 @@ Resources:
                   - !Join ['', ['arn:aws:s3:::', !Ref 'S3Bucket']]
                   - !Join ['', ['arn:aws:s3:::', !Ref 'S3Bucket',/*]]
               - Action:
+                  - codecommit:CancelUploadArchive
                   - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:UploadArchive
+                  - codecommit:GetUploadArchiveStatus
                 Effect: Allow
                 Resource:
                   - !GetAtt CodeCommitRepo.Arn
+              - Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                  - codebuild:StopBuild
+                Effect: Allow
+                Resource:
+                  - !GetAtt BuildProject.Arn
           PolicyName: !Join ['-', [!Ref 'ApplicationName', pipeline]]
       RoleName: !Join ['-', [!Ref 'ApplicationName', pipeline]]
   ProjectPipeline:
@@ -134,7 +164,7 @@ Resources:
               Provider: CodeBuild
               Version: 1
             Configuration:
-              ProjectName: !Ref 'ApplicationName'
+              ProjectName: !Ref BuildProject
             InputArtifacts:
               - Name: !Join ['-', [!Ref 'ApplicationName', source]]
             OutputArtifacts:
