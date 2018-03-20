@@ -55,9 +55,7 @@ Resources:
                 Effect: Allow
                 Resource: '*'
               - Action:
-                  - ecr:CompleteLayerUpload
-                  - ecr:InitiateLayerUpload
-                  - ecr:UploadLayerPart
+                  - ecr:*
                 Effect: Allow
                 Resource: !Sub
                   - "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${Repo}"
