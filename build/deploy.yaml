@@ -10,6 +10,8 @@ Resources:
   EcsTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
+      RequiresCompatibilities:
+        - FARGATE
       ContainerDefinitions:
         - Name: !Ref ContainerName
           Image: !Ref ContainerImage

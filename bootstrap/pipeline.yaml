@@ -11,14 +11,19 @@ Parameters:
 Resources:
   EcsRepository:
     Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
     Properties:
-      RepositoryName: !Ref ApplicationName
+      RepositoryName: !Ref 'ApplicationName'
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref 'ApplicationName'
   CodeCommitRepo:
     Type: AWS::CodeCommit::Repository
     Description: Creating AWS CodeCommit repository for application source code
     Properties:
-      RepositoryDescription: !Join ['', [!Ref ApplicationName, ' project repository']]
-      RepositoryName: !Ref ApplicationName
+      RepositoryDescription: !Join ['', [!Ref 'ApplicationName', ' project repository']]
+      RepositoryName: !Ref 'ApplicationName'
   BuildServiceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -58,7 +63,7 @@ Resources:
                 Effect: Allow
                 Resource: !Sub
                   - "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${Repo}"
-                  - Repo: !Ref EcsRepository
+                  - Repo: !Ref 'EcsRepository'
       RoleName: !Join ['-', [!Ref 'ApplicationName', codebuild]]
   BuildProject:
     Type: AWS::CodeBuild::Project
@@ -67,21 +72,21 @@ Resources:
         Type: CODEPIPELINE
       Name:
         Fn::Join: [ '-', [ !Ref ApplicationName, 'build' ] ]
-      ServiceRole: !GetAtt BuildServiceRole.Arn
+      ServiceRole: !GetAtt 'BuildServiceRole.Arn'
       Source:
         Type: CODEPIPELINE
-        BuildSpec: build/buildspec.yml
+        BuildSpec: build/buildspec.yaml
       Environment:
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/docker:17.09.0
         Type: LINUX_CONTAINER
         EnvironmentVariables:
           - Name: AWS_DEFAULT_REGION
-            Value: !Ref AWS::Region
+            Value: !Ref 'AWS::Region'
           - Name: AWS_ACCOUNT_ID
-            Value: !Ref AWS::AccountId
+            Value: !Ref 'AWS::AccountId'
           - Name: IMAGE_REPO_NAME
-            Value: !Ref EcsRepository
+            Value: !Ref 'EcsRepository'
           - Name: IMAGE_TAG
             Value: latest
         PrivilegedMode: true
@@ -90,7 +95,7 @@ Resources:
     DeletionPolicy: Retain
     Description: S3 bucket for CodePipeline artifacts
     Properties:
-      BucketName: !Join ['-', [!Ref 'ApplicationName', !Ref 'AWS::Region', pipeline, artifacts]]
+      BucketName: !Join ['-', [!Ref 'ApplicationName', !Ref 'AWS::Region', !Ref 'AWS::AccountId', pipeline]]
       VersioningConfiguration:
         Status: Enabled
   PipelineRole:
@@ -123,14 +128,14 @@ Resources:
                   - codecommit:GetUploadArchiveStatus
                 Effect: Allow
                 Resource:
-                  - !GetAtt CodeCommitRepo.Arn
+                  - !GetAtt 'CodeCommitRepo.Arn'
               - Action:
                   - codebuild:BatchGetBuilds
                   - codebuild:StartBuild
                   - codebuild:StopBuild
                 Effect: Allow
                 Resource:
-                  - !GetAtt BuildProject.Arn
+                  - !GetAtt 'BuildProject.Arn'
               - Action:
                   - cloudformation:*
                 Effect: Allow
@@ -140,7 +145,7 @@ Resources:
                   - iam:PassRole
                 Effect: Allow
                 Resource:
-                  - !GetAtt CloudFormationRole.Arn
+                  - !GetAtt 'CloudFormationRole.Arn'
           PolicyName: !Join ['-', [!Ref 'ApplicationName', pipeline]]
       RoleName: !Join ['-', [!Ref 'ApplicationName', pipeline]]
   CloudFormationRole:
@@ -156,7 +161,8 @@ Resources:
                   - cloudformation.amazonaws.com
         Path: /
         Policies:
-          - PolicyDocument:
+          - PolicyName: !Join ['-', [!Ref 'ApplicationName', pipeline, cfn]]
+            PolicyDocument:
               Statement:
                 - Action:
                   - ecs:*
@@ -173,7 +179,7 @@ Resources:
         Location: !Ref 'S3Bucket'
         Type: S3
       Name: !Join ['-', [!Ref 'ApplicationName', pipeline]]
-      RoleArn: !GetAtt PipelineRole.Arn
+      RoleArn: !GetAtt 'PipelineRole.Arn'
       Stages:
         - Name: Source
           Actions:
@@ -200,7 +206,7 @@ Resources:
               Provider: CodeBuild
               Version: 1
             Configuration:
-              ProjectName: !Ref BuildProject
+              ProjectName: !Ref 'BuildProject'
             InputArtifacts:
               - Name: !Join ['-', [!Ref 'ApplicationName', source]]
             OutputArtifacts:
@@ -218,8 +224,12 @@ Resources:
               ActionMode: CHANGE_SET_REPLACE
               Capabilities: CAPABILITY_IAM
               ChangeSetName: pipeline-changeset
-              ParameterOverrides: !Join ['', ['{"ApplicationName":"', !Ref 'ApplicationName', '"}']]
-              RoleArn: !GetAtt [CloudFormationRole, Arn]
+              ParameterOverrides: !Sub
+                - '{"ClusterName": "${ClusterName}", "ContainerImage": "${ContainerImage}", "ContainerName": "${ContainerName}"}'
+                - ClusterName: !Ref 'ApplicationName'
+                  ContainerImage: !Sub ['${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Repo}:latest', {Repo: !Ref ApplicationName}]
+                  ContainerName: !Ref 'ApplicationName'
+              RoleArn: !GetAtt 'CloudFormationRole.Arn'
               StackName: !Join ['-', [!Ref 'ApplicationName', deploy]]
               TemplatePath: !Join ['-', [!Ref 'ApplicationName', 'cfntemplate::build/deploy.yaml']]
             InputArtifacts:
@@ -247,7 +257,7 @@ Resources:
                 Resource:
                   - !Sub
                     - 'arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}'
-                    - Pipeline: !Ref ProjectPipeline
+                    - Pipeline: !Ref 'ProjectPipeline'
       RoleName: !Join ['-', [!Ref 'ApplicationName', cloudwatchevent]]
   SourceEvent:
     Type: AWS::Events::Rule
@@ -261,11 +271,11 @@ Resources:
           referenceName: [master]
           referenceType: [branch]
         detail-type: [CodeCommit Repository State Change]
-        resources: [!GetAtt CodeCommitRepo.Arn]
+        resources: [!GetAtt 'CodeCommitRepo.Arn']
         source: [aws.codecommit]
       Name: !Join ['-', [!Ref 'ApplicationName', SourceEvent]]
       State: ENABLED
       Targets:
         - Id: ProjectPipelineTarget
-          Arn: !Sub ['arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}', {Pipeline: !Ref ProjectPipeline}]
-          RoleArn: !GetAtt SourceEventRole.Arn
+          Arn: !Sub ['arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}', {Pipeline: !Ref 'ProjectPipeline'}]
+          RoleArn: !GetAtt 'SourceEventRole.Arn'
