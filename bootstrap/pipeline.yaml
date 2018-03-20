@@ -140,9 +140,29 @@ Resources:
                   - iam:PassRole
                 Effect: Allow
                 Resource:
-                  - !Sub ['arn:aws:iam::${AWS::AccountId}:role/${Name}', {Name: ecs-docker-pipeline}]
+                  - !GetAtt CloudFormationRole.Arn
           PolicyName: !Join ['-', [!Ref 'ApplicationName', pipeline]]
       RoleName: !Join ['-', [!Ref 'ApplicationName', pipeline]]
+  CloudFormationRole:
+      Description: Role for CloudFormation to assume to deploy
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Statement:
+            - Action: sts:AssumeRole
+              Effect: Allow
+              Principal:
+                Service:
+                  - cloudformation.amazonaws.com
+        Path: /
+        Policies:
+          - PolicyDocument:
+              Statement:
+                - Action:
+                  - ecs:*
+                  Effect: Allow
+                  Resource: '*'
+        RoleName: !Join ['-', [!Ref 'ApplicationName', pipeline, cfn]]
   ProjectPipeline:
     Type: AWS::CodePipeline::Pipeline
     DependsOn:
@@ -199,7 +219,7 @@ Resources:
               Capabilities: CAPABILITY_IAM
               ChangeSetName: pipeline-changeset
               ParameterOverrides: !Join ['', ['{"ApplicationName":"', !Ref 'ApplicationName', '"}']]
-              RoleArn: !GetAtt [PipelineRole, Arn]
+              RoleArn: !GetAtt [CloudFormationRole, Arn]
               StackName: !Join ['-', [!Ref 'ApplicationName', deploy]]
               TemplatePath: !Join ['-', [!Ref 'ApplicationName', 'cfntemplate::build/deploy.yaml']]
             InputArtifacts:
