@@ -70,6 +70,7 @@ Resources:
       ServiceRole: !GetAtt BuildServiceRole.Arn
       Source:
         Type: CODEPIPELINE
+        BuildSpec: build/buildspec.yml
       Environment:
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/docker:17.09.0
@@ -135,6 +136,11 @@ Resources:
                 Effect: Allow
                 Resource:
                   - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/ecs-docker-deploy/*"
+              - Action:
+                  - iam:PassRole
+                Effect: Allow
+                Resource:
+                  - !Sub ['arn:aws:iam::${AWS::AccountId}:role/${Name}', {Name: ecs-docker-pipeline}]
           PolicyName: !Join ['-', [!Ref 'ApplicationName', pipeline]]
       RoleName: !Join ['-', [!Ref 'ApplicationName', pipeline]]
   ProjectPipeline:
