@@ -6,7 +6,8 @@ phases:
   post_build:
     commands:
       - REPO=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
-      #- `aws ecr get-login --no-include-email --region ${AWS_DEFAULT_REGION}`
+      - AUTH=`aws ecr get-login --no-include-email --region ${AWS_DEFAULT_REGION}`
+      - ${AUTH}
       - docker tag ${IMAGE_REPO_NAME}:${IMAGE_TAG} ${REPO}
       - docker push ${REPO}
       - aws cloudformation package --template-file deploy.yaml --output-template-file deploy.package.yaml
