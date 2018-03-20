@@ -58,7 +58,40 @@ Resources:
             Service:
             - codebuild.amazonaws.com
         Version: 2012-10-17
-      RoleName: CodeBuildRole
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:GetObjectVersion
+            Effect: Allow
+            Resource:
+            - Fn::Join:
+              - ''
+              - - 'arn:aws:s3:::'
+                - Ref: S3Bucket
+            - Fn::Join:
+              - ''
+              - - 'arn:aws:s3:::'
+                - Ref: S3Bucket
+                - /*
+          - Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Effect: Allow
+            Resource: '*'
+        PolicyName:
+          Fn::Join:
+          - '-'
+          - - Ref: ApplicationName
+            - codebuild
+      RoleName:
+        Fn::Join:
+        - '-'
+        - - Ref: ApplicationName
+          - codebuild
     Type: AWS::IAM::Role
   CodeCommitRepo:
     Description: Creating AWS CodeCommit repository for application source code
@@ -105,11 +138,24 @@ Resources:
                 - Ref: S3Bucket
                 - /*
           - Action:
+            - codecommit:CancelUploadArchive
             - codecommit:GetBranch
+            - codecommit:GetCommit
+            - codecommit:UploadArchive
+            - codecommit:GetUploadArchiveStatus
             Effect: Allow
             Resource:
             - Fn::GetAtt:
               - CodeCommitRepo
+              - Arn
+          - Action:
+            - codebuild:BatchGetBuilds
+            - codebuild:StartBuild
+            - codebuild:StopBuild
+            Effect: Allow
+            Resource:
+            - Fn::GetAtt:
+              - BuildProject
               - Arn
         PolicyName:
           Fn::Join:
@@ -170,7 +216,7 @@ Resources:
             Version: 1
           Configuration:
             ProjectName:
-              Ref: ApplicationName
+              Ref: BuildProject
           InputArtifacts:
           - Name:
               Fn::Join:
