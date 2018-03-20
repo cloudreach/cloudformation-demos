@@ -201,7 +201,7 @@ Resources:
               ParameterOverrides: !Join ['', ['{"ApplicationName":"', !Ref 'ApplicationName', '"}']]
               RoleArn: !GetAtt [PipelineRole, Arn]
               StackName: !Join ['-', [!Ref 'ApplicationName', deploy]]
-              TemplatePath: !Join ['-', [!Ref 'ApplicationName', 'cfntemplate::deploy.yaml']]
+              TemplatePath: !Join ['-', [!Ref 'ApplicationName', 'cfntemplate::build/deploy.yaml']]
             InputArtifacts:
               - Name: !Join ['-', [!Ref 'ApplicationName', cfntemplate]]
             RunOrder: 1
