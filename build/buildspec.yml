@@ -13,4 +13,4 @@ phases:
       - docker push ${REPO}
 artifacts:
   files:
-    - deploy.yaml
+    - build/deploy.yaml

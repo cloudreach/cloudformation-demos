@@ -31,7 +31,6 @@ Resources:
                 - codebuild.amazonaws.com
             Action:
               - sts:AssumeRole
-
       Policies:
         - PolicyName: !Join ['-', [!Ref 'ApplicationName', codebuild]]
           PolicyDocument:
@@ -131,6 +130,11 @@ Resources:
                 Effect: Allow
                 Resource:
                   - !GetAtt BuildProject.Arn
+              - Action:
+                  - cloudformation:*
+                Effect: Allow
+                Resource:
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/ecs-docker-deploy/*"
           PolicyName: !Join ['-', [!Ref 'ApplicationName', pipeline]]
       RoleName: !Join ['-', [!Ref 'ApplicationName', pipeline]]
   ProjectPipeline:
@@ -190,13 +194,14 @@ Resources:
               ChangeSetName: pipeline-changeset
               ParameterOverrides: !Join ['', ['{"ApplicationName":"', !Ref 'ApplicationName', '"}']]
               RoleArn: !GetAtt [PipelineRole, Arn]
-              StackName: !Join ['-', [deploy, !Ref 'ApplicationName']]
-              TemplatePath: !Join ['', [!Ref 'ApplicationName', -cfntemplate, '::template-export.yml']]
+              StackName: !Join ['-', [!Ref 'ApplicationName', deploy]]
+              TemplatePath: !Join ['-', [!Ref 'ApplicationName', 'cfntemplate::deploy.yaml']]
             InputArtifacts:
               - Name: !Join ['-', [!Ref 'ApplicationName', cfntemplate]]
             RunOrder: 1
   SourceEventRole:
     Description: IAM role to allow Amazon CloudWatch Events to trigger AWS CodePipeline execution
+    Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
         Statement:
@@ -207,7 +212,7 @@ Resources:
                 - events.amazonaws.com
             Sid: 1
       Policies:
-        - PolicyName: CodeStarWorkerCloudWatchEventPolicy
+        - PolicyName: CodePipelineCloudWatchEventPolicy
           PolicyDocument:
             Statement:
               - Action:
@@ -218,4 +223,23 @@ Resources:
                     - 'arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}'
                     - Pipeline: !Ref ProjectPipeline
       RoleName: !Join ['-', [!Ref 'ApplicationName', cloudwatchevent]]
-    Type: AWS::IAM::Role
+  SourceEvent:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Detects changes to the source repository and triggers pipeline execution
+      EventPattern:
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceName: [master]
+          referenceType: [branch]
+        detail-type: [CodeCommit Repository State Change]
+        resources: [!GetAtt CodeCommitRepo.Arn]
+        source: [aws.codecommit]
+      Name: !Join ['-', [!Ref 'ApplicationName', SourceEvent]]
+      State: ENABLED
+      Targets:
+        - Id: ProjectPipelineTarget
+          Arn: !Sub ['arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}', {Pipeline: !Ref ProjectPipeline}]
+          RoleArn: !GetAtt SourceEventRole.Arn

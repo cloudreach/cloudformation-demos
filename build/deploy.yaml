@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  ClusterName:
+    Type: String
+  ContainerImage:
+    Type: String
+  ContainerName:
+    Type: String
+Resources:
+  EcsTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions:
+        - Name: !Ref ContainerName
+          Image: !Ref ContainerImage
+          Cpu: 10
+          PortMappings:
+            - ContainerPort: 80
+              HostPort: -1
+          Memory: 32
+          Essential: true
+  EcsService:
+    Type: AWS::ECS::Service
+    Properties:
+      TaskDefinition:
+        Ref: !Ref EcsTaskDefinition
+      DesiredCount: 1
+      LoadBalancers:
+      - TargetGroupArn:
+          Ref: TargetGroup
+        ContainerPort: 80
+        ContainerName: !Ref ContainerName
+      Cluster:  !Ref ClusterName
