@@ -9,6 +9,7 @@ phases:
       - AUTH=`aws ecr get-login --no-include-email --region ${AWS_DEFAULT_REGION}`
       - ${AUTH}
       - docker tag ${IMAGE_REPO_NAME}:${IMAGE_TAG} ${REPO}
+      - echo ${REPO}
       - docker push ${REPO}
       - aws cloudformation package --template-file deploy.yaml --output-template-file deploy.package.yaml
 artifacts:

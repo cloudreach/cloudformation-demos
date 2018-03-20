@@ -1,16 +1,12 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'AWS CloudFormation Template for building a simple docker pipeline'
 Parameters:
-  AccountId:
-    Type: String
   ApplicationName:
     AllowedPattern: ^[a-z]([a-z0-9-])+$
     ConstraintDescription: Application name must be between 2 and 15 characters, begin with a letter, and only contain lowercase letters, numbers, and hyphens (-).
     Description: Name of the application.
     MaxLength: 15
     MinLength: 2
-    Type: String
-  Region:
     Type: String
 Resources:
   EcsRepository:
@@ -54,6 +50,18 @@ Resources:
                   - logs:PutLogEvents
                 Effect: Allow
                 Resource: '*'
+              - Action:
+                  - ecr:GetAuthorizationToken
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - ecr:CompleteLayerUpload
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                Effect: Allow
+                Resource: !Sub
+                  - "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${Repo}"
+                  - Repo: !Ref EcsRepository
       RoleName: !Join ['-', [!Ref 'ApplicationName', codebuild]]
   BuildProject:
     Type: AWS::CodeBuild::Project
@@ -71,9 +79,9 @@ Resources:
         Type: LINUX_CONTAINER
         EnvironmentVariables:
           - Name: AWS_DEFAULT_REGION
-            Value: !Ref Region
+            Value: !Ref AWS::Region
           - Name: AWS_ACCOUNT_ID
-            Value: !Ref AccountId
+            Value: !Ref AWS::AccountId
           - Name: IMAGE_REPO_NAME
             Value: !Ref EcsRepository
           - Name: IMAGE_TAG
@@ -189,3 +197,27 @@ Resources:
             InputArtifacts:
               - Name: !Join ['-', [!Ref 'ApplicationName', cfntemplate]]
             RunOrder: 1
+  SourceEventRole:
+    Description: IAM role to allow Amazon CloudWatch Events to trigger AWS CodePipeline execution
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+            Sid: 1
+      Policies:
+        - PolicyName: CodeStarWorkerCloudWatchEventPolicy
+          PolicyDocument:
+            Statement:
+              - Action:
+                  - codepipeline:StartPipelineExecution
+                Effect: Allow
+                Resource:
+                  - !Sub
+                    - 'arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}'
+                    - Pipeline: !Ref ProjectPipeline
+      RoleName: !Join ['-', [!Ref 'ApplicationName', cloudwatchevent]]
+    Type: AWS::IAM::Role
