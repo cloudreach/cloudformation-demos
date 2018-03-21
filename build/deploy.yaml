@@ -1,35 +1,207 @@
 AWSTemplateFormatVersion: 2010-09-09
+Description: 'AWS CloudFormation Template for deploying a container to Fargate'
 Parameters:
-  ClusterName:
+  ClusterNameParameter:
     Type: String
-  ContainerImage:
+  ContainerImageParameter:
     Type: String
-  ContainerName:
+  ContainerNameParameter:
     Type: String
+  ContainerVersionParameter:
+    Type: String
+    Default: latest
 Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/24
+      Tags:
+        - Key: Name
+          Value: !Ref 'ContainerNameParameter'
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref 'ContainerNameParameter'
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref 'InternetGateway'
+      VpcId: !Ref 'Vpc'
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'Vpc'
+      Tags:
+        - Key: Name
+          Value: !Ref 'ContainerNameParameter'
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn:
+    - InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Join ['', [!Ref 'AWS::Region', 'a']]
+      CidrBlock: 10.0.0.0/26
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref 'Vpc'
+      Tags:
+        - Key: Name
+          Value: !Ref 'ContainerNameParameter'
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Join ['', [!Ref 'AWS::Region', 'c']]
+      CidrBlock: 10.0.0.64/26
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref 'Vpc'
+      Tags:
+        - Key: Name
+          Value: !Ref 'ContainerNameParameter'
+  Subnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref 'RouteTable'
+      SubnetId: !Ref 'Subnet1'
+  Subnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref 'RouteTable'
+      SubnetId: !Ref 'Subnet2'
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http to client host
+      VpcId: !Ref 'Vpc'
+      SecurityGroupIngress:
+      - IpProtocol: -1
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: -1
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 0.0.0.0/0
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Ref 'ContainerNameParameter'
+      SecurityGroups:
+        - !Ref 'SecurityGroup'
+      Subnets:
+        - !Ref 'Subnet1'
+        - !Ref 'Subnet2'
+  TargetGroup:
+      Type: AWS::ElasticLoadBalancingV2::TargetGroup
+      Properties:
+        Name: !Ref 'ContainerNameParameter'
+        Port: 80
+        Protocol: HTTP
+        Tags:
+          - Key: Name
+            Value: !Ref 'ContainerNameParameter'
+        TargetType: ip
+        VpcId: !Ref 'Vpc'
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref 'TargetGroup'
+          Type: forward
+      LoadBalancerArn: !Ref 'LoadBalancer'
+      Port: 80
+      Protocol: HTTP
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['', ['/ecs/', !Ref 'ContainerNameParameter']]
+      RetentionInDays: 14
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+      Path: /
+      Policies:
+        - PolicyName: !Join ['-', [!Ref 'ContainerNameParameter', ecs, service]]
+          PolicyDocument:
+            Statement:
+              - Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:GetRepositoryPolicy
+                  - ecr:DescribeRepositories
+                  - ecr:ListImages
+                  - ecr:DescribeImages
+                  - ecr:BatchGetImage
+                Effect: Allow
+                Resource: !Sub
+                  - 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${Image}'
+                  - { Image: !Ref 'ContainerNameParameter' }
+              - Action:
+                  - ecr:GetAuthorizationToken
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: '*'
+      RoleName: !Join ['-', [!Ref 'ContainerNameParameter', ecs, task]]
   EcsTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
+      Cpu: 256
+      ExecutionRoleArn: !GetAtt 'EcsTaskRole.Arn'
+      Family: !Ref 'ContainerNameParameter'
+      Memory: 512
+      NetworkMode: awsvpc
       RequiresCompatibilities:
         - FARGATE
       ContainerDefinitions:
-        - Name: !Ref ContainerName
-          Image: !Ref ContainerImage
-          Cpu: 10
+        - Name: !Ref 'ContainerNameParameter'
+          Image: !Join [':', [!Ref 'ContainerImageParameter', !Ref 'ContainerVersionParameter']]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref 'LogGroup'
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: ecs
           PortMappings:
             - ContainerPort: 80
-              HostPort: -1
-          Memory: 32
           Essential: true
+      TaskRoleArn: !GetAtt 'EcsTaskRole.Arn'
   EcsService:
     Type: AWS::ECS::Service
+    DependsOn:
+      - LoadBalancerListener
     Properties:
-      TaskDefinition:
-        Ref: !Ref EcsTaskDefinition
+      TaskDefinition: !Ref 'EcsTaskDefinition'
       DesiredCount: 1
       LoadBalancers:
-      - TargetGroupArn:
-          Ref: TargetGroup
+      - TargetGroupArn: !Ref 'TargetGroup'
         ContainerPort: 80
-        ContainerName: !Ref ContainerName
-      Cluster:  !Ref ClusterName
+        ContainerName: !Ref 'ContainerNameParameter'
+      Cluster: !Ref 'ClusterNameParameter'
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref 'SecurityGroup'
+          Subnets:
+            - !Ref 'Subnet1'
+            - !Ref 'Subnet2'
+Outputs:
+  LoadBalancerDnsName:
+    Value: !GetAtt 'LoadBalancer.DNSName'

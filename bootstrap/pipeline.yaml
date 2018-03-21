@@ -225,9 +225,9 @@ Resources:
               Capabilities: CAPABILITY_IAM
               ChangeSetName: pipeline-changeset
               ParameterOverrides: !Sub
-                - '{"ClusterName": "${ClusterName}", "ContainerImage": "${ContainerImage}", "ContainerName": "${ContainerName}"}'
+                - '{"ClusterNameParameter": "${ClusterName}", "ContainerImageParameter": "${ContainerImage}", "ContainerNameParameter": "${ContainerName}"}'
                 - ClusterName: !Ref 'ApplicationName'
-                  ContainerImage: !Sub ['${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Repo}:latest', {Repo: !Ref ApplicationName}]
+                  ContainerImage: !Sub ['${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Repo}', {Repo: !Ref ApplicationName}]
                   ContainerName: !Ref 'ApplicationName'
               RoleArn: !GetAtt 'CloudFormationRole.Arn'
               StackName: !Join ['-', [!Ref 'ApplicationName', deploy]]

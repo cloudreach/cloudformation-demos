@@ -10,6 +10,7 @@ aws cloudformation deploy \
 	--stack-name "${APP_NAME}-deploy" \
 	--capabilities CAPABILITY_NAMED_IAM \
 	--parameter-overrides \
-		ClusterName=${APP_NAME}
-		ContainerName=${APP_NAME}
-		ContainerImage=${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${APP_NAME}:latest
+		"ClusterNameParameter=${APP_NAME}" \
+		"ContainerNameParameter=${APP_NAME}" \
+		"ContainerImageParameter=${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${APP_NAME}" \
+		"ContainerVersionParameter=latest"
