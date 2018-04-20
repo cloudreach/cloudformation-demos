@@ -1,0 +1,20 @@
+version: 0.2
+phases:
+  pre_build:
+    commands:
+      - $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email)
+      - REPO=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${APP_NAME}
+      - VERSION=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+  build:
+    commands:
+      - docker build -t ${APP_NAME} .
+  post_build:
+    commands:
+      - docker tag ${APP_NAME} ${REPO}:latest
+      - docker tag ${APP_NAME} ${REPO}:${VERSION}
+      - docker push ${REPO}:latest
+      - docker push ${REPO}:${VERSION}
+      - printf '[{"name":"%s","imageUri":"%s"}]' ${APP_NAME} ${REPO}:${VERSION} > images.json
+artifacts:
+  files:
+    - images.json
